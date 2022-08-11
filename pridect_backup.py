@@ -4,12 +4,14 @@
 # @Author  : 武汉理工大学 - 智慧物流挑战赛小车
 # @File    : predict.py
 # @Description : 总测试的推理程序
+import rospy
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
 
 import os
 import sys
 import io
 import random
-
 
 __dir__ = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(__dir__)
@@ -27,7 +29,6 @@ from PIL import Image, ImageDraw, ImageFont
 import ocr_rec_predict as predict_rec
 import ocr_det_predict as predict_det
 from object_predict import Detector
-
 
 # 所有省份的标签值
 LABELS = ['北京', '天津', '辽宁', '甘肃', '福建', '山东', '湖北', '四川', '江苏', '河北', '云南',
@@ -47,13 +48,11 @@ class TextSystem(object):
         threshold: 目标检测结果的置信度阈值
     """
 
-
     def __init__(self, det_model_dir, rec_model_dir, picodet_model_dir, threshold=0.8):
         self.text_detector = predict_det.TextDetector(det_model_dir)  # 创建文本模型检测器
         self.text_recognizer = predict_rec.TextRecognizer(rec_model_dir)  # 创建文本识别检测器
         self.detector = Detector(picodet_model_dir, threshold)  # 创建目标检测模型检测器
         self.drop_score = 0.5  # 识别置信度阈值
-
 
     def __call__(self, img, original_image, ratio):
         """
@@ -98,7 +97,6 @@ class TextSystem(object):
                 filter_rec_res.append(rec_result)  # 添加符合要求的识别结果
 
         return filter_rec_res, bbox, dt_boxes
-
 
 
 def sorted_boxes(dt_boxes):
@@ -229,8 +227,8 @@ def main(image_dir, det_model_dir, rec_model_dir, picodet_model_dir):
 
     # 获得需要检测图片名称列表
     image_file_list = os.listdir(image_dir)
-    # 从图片文件夹中随机选取20张
-    image_choice_list = random.sample(image_file_list, 23)
+    # 从图片文件夹中选取1张
+    image_choice_list = random.sample(image_file_list, 1)
     print("predict images (%d) : " % len(image_choice_list))
     print(image_choice_list)
     # 创建推理类
@@ -240,44 +238,48 @@ def main(image_dir, det_model_dir, rec_model_dir, picodet_model_dir):
     # 在当前路径下创建result.txt结果文件并打开以后续写入
     f = io.open('result.txt', 'w', encoding='utf-8')
     # 开始预测
-    print("--- 武汉理工大学-智慧物流挑战赛小车 ---")
-    print("--------- xx xxx xxx ---------")
-    print("-------------------------Start------------------------")
     # 记录开始时间
     total_time = 0.
     # 遍历图片列表开始推理识别
-    for image_file in image_choice_list:
-        print("------------------:", image_file)
-        # 记录每张图片推测的开始时间
-        img_start_time = time.time()
-        # 图片的相对路径
-        img_path = os.path.join(image_dir, image_file)
-        # 读取图片
-        original_image = cv2.imread(img_path)
-        # 记录原图像的高和宽
-        original_height, original_width = original_image.shape[:2]
-        # 计算图像的高宽之比
-        ratio = original_height * 1. / original_width
-        # 缩小图片, 利于目标检测
-        img = cv2.resize(original_image, (320, int(320 * ratio)), interpolation=cv2.INTER_LINEAR)
-        # 预测推理, 进行以此目标检测, 文本检测, 文本识别, 返回文字识别结果(未筛选)、邮件检测框、文字检测框
-        rec_res, bbox, dt_boxes = text_sys(img, original_image, original_width / 320)
-        # 对文本识别得到的结果进行筛选, 获得最终的文字识别结果
-        rec = get_text(rec_res)
-        print("rec: ", rec)
-        # 计算目标中心坐标(x, y)
-        center_xy = (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2))
-        # 每张图片的识别结果
-        text = u"%s,(%d,%d);" % (rec, center_xy[0], center_xy[1])
-        # 写入result.txt
-        f.write(text)
-        # 显示结果函数, 显示原图和处理后的图片
-        draw_show(img, rec, bbox, font_path)
-        # 输出一张图片的推测时间
-        end_time = time.time() - img_start_time
-        total_time += end_time
-        print("time : %.3f s" % end_time)
+    #    for image_file in image_choice_list:
+    # 记录每张图片推测的开始时间
+    img_start_time = time.time()
+    # 图片的相对路径
+    img_path = './images/1.jpg'
+    # 读取图片
 
+    rospy.init_node('listener', anonymous=True)
+    # rospy.Subscriber("/usb_cam/image_correct", Image, callback)
+    img_data = rospy.wait_for_message("/usb_cam/image_correct", Image, timeout=10)
+    imgdata = CvBridge().imgmsg_to_cv2(img_data, "rgb8")
+    imgdata = imgdata[:, :, ::-1]
+
+    original_image = imgdata
+
+    # original_image = cv2.imread(img_path)
+    # 记录原图像的高和宽
+    original_height, original_width = original_image.shape[:2]
+    # 计算图像的高宽之比
+    ratio = original_height * 1. / original_width
+    # 缩小图片, 利于目标检测
+    img = cv2.resize(original_image, (320, int(320 * ratio)), interpolation=cv2.INTER_LINEAR)
+    # 预测推理, 进行以此目标检测, 文本检测, 文本识别, 返回文字识别结果(未筛选)、邮件检测框、文字检测框
+    rec_res, bbox, dt_boxes = text_sys(img, original_image, original_width / 320)
+    # 对文本识别得到的结果进行筛选, 获得最终的文字识别结果
+    rec = get_text(rec_res)
+    print("rec: ", rec)
+    # 计算目标中心坐标(x, y)
+    center_xy = (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2))
+    # 每张图片的识别结果
+    text = u"%s_%d_%d;" % (rec, center_xy[0], center_xy[1])
+    # 写入result.txt
+    f.write(text)
+    # 显示结果函数, 显示原图和处理后的图片
+    draw_show(img, rec, bbox, font_path)
+    # 输出一张图片的推测时间
+    end_time = time.time() - img_start_time
+    total_time += end_time
+    print("time : %.3f s" % end_time)
     print("--------total_time : %.3f s" % total_time)
 
 
@@ -291,7 +293,7 @@ if __name__ == "__main__":
     # 文字检测模型的路径
     ocr_det_model_dir = 'weights/ocr_det_model'
 
-    # 文字识别模型的路径`
+    # 文字识别模型的路径
     ocr_rec_model_dir = 'weights/ocr_rec_model'
 
     # 目标检测模型的路径
